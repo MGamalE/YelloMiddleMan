@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">YelloMiddleMan</string>
-    <string name="message">This received user from emitter has been forwarded to Receiver!</string>
+    <string name="message">This received user from Emitter has been forwarded to Receiver!</string>
+    <string name="save_status">Receiver saved the current user and the saving status has been sent to Emitter!</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
 </resources>

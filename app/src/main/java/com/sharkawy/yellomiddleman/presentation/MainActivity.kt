@@ -2,29 +2,37 @@ package com.sharkawy.yellomiddleman.presentation
 
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textview.MaterialTextView
 import com.google.gson.Gson
 import com.sharkawy.yellomiddleman.R
 import com.sharkawy.yellomiddleman.entities.User
+import com.sharkawy.yellomiddleman.presentation.core.getNetworkIp
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.Socket
 
 
 class MainActivity : AppCompatActivity() {
-    private val INTENT_ACTION = "com.sharkawy.yellomiddleman"
+    private val INTENT_ACTION_MiddleMan = "com.sharkawy.yellomiddleman"
+    private val INTENT_ACTION_Emitter = "com.sharkawy.yelloemitter"
+    private val INTENT_KEY = "MiddleManUser"
+    private val INTENT_COMPONENT_PACKAGE = "com.sharkawy.yelloemitter"
+    private val INTENT_COMPONENT_PACKAGE_CLASS =
+        "com.sharkawy.yelloemitter.presentation.core.EmitterReceiver"
 
     private var receiver: MiddleManReceiver? = null
     private var user: User? = null
@@ -36,8 +44,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
     }
 
-    override fun onStart() {
-        super.onStart()
+    override fun onResume() {
+        super.onResume()
+        showLoading()
+    }
+
+    private fun showLoading() {
         progress = ProgressDialog(this@MainActivity)
         progress.setTitle("Loading")
         progress.setMessage("Waiting...")
@@ -46,14 +58,11 @@ class MainActivity : AppCompatActivity() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             progress.dismiss()
+            registerBroadCastReceiver()
+            listenForBroadCastReceivedData()
         }, 2000)
     }
 
-    override fun onResume() {
-        super.onResume()
-        registerBroadCastReceiver()
-        listenForBroadCastReceivedData()
-    }
 
     private fun listenForBroadCastReceivedData() {
         val prefs = this.getSharedPreferences(
@@ -69,11 +78,11 @@ class MainActivity : AppCompatActivity() {
     private fun checkIfBroadCastReceivedData() {
         if (user != null) {
             showReceivedUser()
-            sendReceivedUserWithClientServer()
+            writeToClientServer()
         }
     }
 
-    private fun sendReceivedUserWithClientServer() {
+    private fun writeToClientServer() {
         GlobalScope.launch {
             try {
                 val server = ServerSocket(8888)
@@ -81,22 +90,42 @@ class MainActivity : AppCompatActivity() {
                 val serverClient: Socket = server.accept()
                 val outStream = DataOutputStream(serverClient.getOutputStream())
 
-
                 outStream.writeUTF(
                     Gson().toJson(User(user?.username, user?.phone))
                 )
                 outStream.flush()
 
+
                 outStream.close()
                 serverClient.close()
                 server.close()
 
-                Toast.makeText(
-                    applicationContext,
-                    "Server started and sent data to receiver!",
-                    Toast.LENGTH_SHORT
-                ).show()
 
+            } catch (e: Exception) {
+                Log.e("EXCEPTION", e.toString())
+            }
+        }
+
+        readFromClientServer()
+        //743215398522000
+    }
+
+    private fun readFromClientServer() {
+        GlobalScope.launch {
+            try {
+                Log.e("Client", " Create socket connection")
+                val socket = Socket(getNetworkIp(this@MainActivity), 9999)
+                val inStream = DataInputStream(socket.getInputStream())
+                val serverMessage = inStream.readUTF()
+
+                Handler(Looper.getMainLooper()).post {
+                    Log.e("Client", " ${serverMessage}")
+                    showReceivedStatus()
+                    sendSavingStatusToEmitter(serverMessage)
+                }
+
+                inStream.close()
+                socket.close()
             } catch (e: Exception) {
                 Log.e("EXCEPTION", e.toString())
             }
@@ -106,7 +135,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun registerBroadCastReceiver() {
         receiver = MiddleManReceiver()
-        val intentFilter = IntentFilter(INTENT_ACTION)
+        val intentFilter = IntentFilter(INTENT_ACTION_MiddleMan)
         registerReceiver(receiver, intentFilter)
     }
 
@@ -127,6 +156,33 @@ class MainActivity : AppCompatActivity() {
             builder.dismiss()
         }
 
+    }
+
+    private fun showReceivedStatus() {
+        val dialogView =
+            LayoutInflater.from(this@MainActivity).inflate(R.layout.dialog_receive_status, null)
+        val builder = AlertDialog.Builder(this@MainActivity)
+            .setView(dialogView)
+            .show()
+
+        val confirmBtn = dialogView.findViewById<MaterialButton>(R.id.confirm_btn)
+
+        confirmBtn.setOnClickListener {
+            builder.dismiss()
+        }
+
+    }
+
+    private fun sendSavingStatusToEmitter(status: String) {
+        val intent = Intent()
+        intent.action = INTENT_ACTION_Emitter
+        intent.putExtra(INTENT_KEY, status)
+        intent.component =
+            ComponentName(
+                INTENT_COMPONENT_PACKAGE,
+                INTENT_COMPONENT_PACKAGE_CLASS
+            )
+        sendBroadcast(intent)
     }
 
     override fun onDestroy() {
